@@ -1,4 +1,5 @@
 """RAWG API client — enriches game titles with metadata."""
+
 import os
 import time
 from typing import Optional
@@ -7,7 +8,7 @@ import requests
 
 RAWG_BASE = "https://api.rawg.io/api"
 NINTENDO_PLATFORM_IDS = {
-    7,   # Nintendo Switch
+    7,  # Nintendo Switch
     83,  # Nintendo Switch 2 (id may vary, fallback by name)
 }
 NINTENDO_PLATFORM_NAMES = {"nintendo switch", "nintendo switch 2"}
@@ -54,7 +55,9 @@ def is_on_nintendo(game: dict) -> bool:
     for p in platforms:
         name = (p.get("platform") or {}).get("name", "").lower()
         pid = (p.get("platform") or {}).get("id", 0)
-        if pid in NINTENDO_PLATFORM_IDS or any(n in name for n in NINTENDO_PLATFORM_NAMES):
+        if pid in NINTENDO_PLATFORM_IDS or any(
+            n in name for n in NINTENDO_PLATFORM_NAMES
+        ):
             return True
     return False
 
@@ -62,10 +65,15 @@ def is_on_nintendo(game: dict) -> bool:
 def extract_metadata(detail: dict) -> dict:
     """Pull the fields we care about from a RAWG game detail response."""
     genres = [g["name"] for g in (detail.get("genres") or [])]
-    tags = [t["name"] for t in (detail.get("tags") or []) if t.get("language") == "eng"][:30]
+    tags = [
+        t["name"] for t in (detail.get("tags") or []) if t.get("language") == "eng"
+    ][:30]
     developers = [d["name"] for d in (detail.get("developers") or [])]
     publishers = [p["name"] for p in (detail.get("publishers") or [])]
-    platforms = [(p.get("platform") or {}).get("name", "") for p in (detail.get("platforms") or [])]
+    platforms = [
+        (p.get("platform") or {}).get("name", "")
+        for p in (detail.get("platforms") or [])
+    ]
 
     return {
         "rawg_id": detail.get("id"),
@@ -86,6 +94,7 @@ def extract_metadata(detail: dict) -> dict:
 def get_new_releases(days: int, api_key: str, nintendo_only: bool = True) -> list[dict]:
     """Return games released in the last `days` days, optionally filtered to Nintendo platforms."""
     from datetime import datetime, timedelta, timezone
+
     end = datetime.now(timezone.utc).date()
     start = end - timedelta(days=days)
     params = {

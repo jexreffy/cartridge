@@ -2,6 +2,7 @@
 Predict Lambda — given a game title (or RAWG slug), predicts a score.
 Uses the stored sklearn model + taste profile. Zero Bedrock calls at runtime.
 """
+
 import json
 import os
 import time
@@ -11,9 +12,12 @@ from decimal import Decimal
 import boto3
 import numpy as np
 
-from shared import logger
-from shared.rawg import get_api_key, search_game, get_game_detail, extract_metadata, is_on_nintendo
-from shared.model import load_model, load_metadata
+from shared.rawg import (
+    search_game,
+    get_game_detail,
+    extract_metadata,
+)
+from shared.model import load_model
 
 GAMES_TABLE = os.environ["GAMES_TABLE"]
 PREDICTIONS_TABLE = os.environ["PREDICTIONS_TABLE"]
@@ -41,7 +45,9 @@ def get_model():
     return _model_cache, _model_meta_cache
 
 
-def build_feature_vector(meta: dict, model_bundle: dict, model_meta: dict) -> np.ndarray:
+def build_feature_vector(
+    meta: dict, model_bundle: dict, model_meta: dict
+) -> np.ndarray:
     genre_mlb = model_bundle["genre_mlb"]
     tag_tfidf = model_bundle["tag_tfidf"]
 
@@ -53,10 +59,14 @@ def build_feature_vector(meta: dict, model_bundle: dict, model_meta: dict) -> np
     release_norm = (release_year - 1985) / (2026 - 1985)
     times_norm = 0.0  # unknown for new games
 
-    return np.concatenate([genres_vec, tags_vec, [metacritic, release_norm, times_norm]])
+    return np.concatenate(
+        [genres_vec, tags_vec, [metacritic, release_norm, times_norm]]
+    )
 
 
-def compute_factor_breakdown(meta: dict, model_bundle: dict, model_meta: dict) -> list[dict]:
+def compute_factor_breakdown(
+    meta: dict, model_bundle: dict, model_meta: dict
+) -> list[dict]:
     """Return top contributing features for the explanation."""
     top_features = model_meta.get("top_features", [])[:8]
     genres = set(meta.get("genres", []))
@@ -67,11 +77,32 @@ def compute_factor_breakdown(meta: dict, model_bundle: dict, model_meta: dict) -
         name = feat["name"]
         importance = feat["importance"]
         if name in genres:
-            factors.append({"feature": name, "type": "genre", "importance": importance, "matched": True})
+            factors.append(
+                {
+                    "feature": name,
+                    "type": "genre",
+                    "importance": importance,
+                    "matched": True,
+                }
+            )
         elif name.lower() in tags:
-            factors.append({"feature": name, "type": "tag", "importance": importance, "matched": True})
+            factors.append(
+                {
+                    "feature": name,
+                    "type": "tag",
+                    "importance": importance,
+                    "matched": True,
+                }
+            )
         elif name in ("metacritic", "release_year", "times_completed"):
-            factors.append({"feature": name, "type": "numeric", "importance": importance, "matched": False})
+            factors.append(
+                {
+                    "feature": name,
+                    "type": "numeric",
+                    "importance": importance,
+                    "matched": False,
+                }
+            )
 
     return factors[:5]
 
@@ -94,7 +125,10 @@ def handler(event: dict, context) -> dict:
     # Fetch game metadata from RAWG
     result = search_game(title, api_key)
     if not result:
-        return {"statusCode": 404, "body": json.dumps({"error": f"Game not found: {title}"})}
+        return {
+            "statusCode": 404,
+            "body": json.dumps({"error": f"Game not found: {title}"}),
+        }
 
     time.sleep(0.25)
     detail = get_game_detail(result["id"], api_key)
@@ -138,22 +172,27 @@ def handler(event: dict, context) -> dict:
     # Persist prediction
     ttl = int(time.time()) + (90 * 24 * 60 * 60)
     today = datetime.now(timezone.utc).date().isoformat()
-    predictions_table.put_item(Item={
-        "game_id": meta["rawg_slug"],
-        "sk": f"pred#{today}",
-        "predicted_score": Decimal(str(round(predicted_score, 1))),
-        "confidence": Decimal(str(confidence)),
-        "on_nintendo": on_nintendo,
-        "source": "search",
-        "title": meta["rawg_name"],
-        "genres": meta["genres"],
-        "background_image": meta["background_image"],
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "ttl": ttl,
-    })
+    predictions_table.put_item(
+        Item={
+            "game_id": meta["rawg_slug"],
+            "sk": f"pred#{today}",
+            "predicted_score": Decimal(str(round(predicted_score, 1))),
+            "confidence": Decimal(str(confidence)),
+            "on_nintendo": on_nintendo,
+            "source": "search",
+            "title": meta["rawg_name"],
+            "genres": meta["genres"],
+            "background_image": meta["background_image"],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "ttl": ttl,
+        }
+    )
 
     return {
         "statusCode": 200,
-        "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+        },
         "body": json.dumps(prediction),
     }

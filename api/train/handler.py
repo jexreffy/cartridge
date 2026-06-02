@@ -3,6 +3,7 @@ Train Lambda — fits a GradientBoostingRegressor on the user's game library.
 Saves model artifact + metadata to S3.
 Calls Bedrock once to generate/refresh the taste profile.
 """
+
 import json
 import os
 from datetime import datetime, timezone
@@ -45,7 +46,9 @@ def scan_all_games() -> list[dict]:
     return items
 
 
-def build_features(games: list[dict]) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
+def build_features(
+    games: list[dict],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
     """Build feature matrix, target vector, sample weights, and feature metadata."""
     # Fit genre binarizer
     genre_mlb = MultiLabelBinarizer()
@@ -72,7 +75,9 @@ def build_features(games: list[dict]) -> tuple[np.ndarray, np.ndarray, np.ndarra
         times = float(g.get("times_completed") or 0)
         times_norm = min(times, 4) / 4.0
 
-        row = np.concatenate([genres_vec, tags_vec, [metacritic, release_norm, times_norm]])
+        row = np.concatenate(
+            [genres_vec, tags_vec, [metacritic, release_norm, times_norm]]
+        )
         rows.append(row)
         targets.append(float(g["my_score"]))
         weights.append(float(g.get("weight") or 3))
@@ -93,10 +98,13 @@ def build_features(games: list[dict]) -> tuple[np.ndarray, np.ndarray, np.ndarra
 
 def generate_taste_profile(games: list[dict]) -> str:
     """Call Bedrock once to write a natural-language taste profile."""
-    top_games = sorted(games, key=lambda g: (g["my_score"], g.get("weight", 3)), reverse=True)[:20]
+    top_games = sorted(
+        games, key=lambda g: (g["my_score"], g.get("weight", 3)), reverse=True
+    )[:20]
     low_games = sorted(games, key=lambda g: g["my_score"])[:5]
 
     from collections import Counter
+
     genre_counts: Counter = Counter()
     tag_counts: Counter = Counter()
     for g in games:
@@ -129,11 +137,13 @@ Keep it under 250 words."""
 
     resp = bedrock.invoke_model(
         modelId=BEDROCK_MODEL,
-        body=json.dumps({
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 400,
-            "messages": [{"role": "user", "content": prompt}],
-        }),
+        body=json.dumps(
+            {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 400,
+                "messages": [{"role": "user", "content": prompt}],
+            }
+        ),
         contentType="application/json",
         accept="application/json",
     )
@@ -167,7 +177,11 @@ def handler(event: dict, context) -> dict:
     importances = model_bundle["regressor"].feature_importances_
     genre_classes = feat_meta["genre_classes"]
     tag_features = feat_meta["tag_features"]
-    all_feature_names = list(genre_classes) + list(tag_features) + ["metacritic", "release_year", "times_completed"]
+    all_feature_names = (
+        list(genre_classes)
+        + list(tag_features)
+        + ["metacritic", "release_year", "times_completed"]
+    )
 
     top_features = sorted(
         zip(all_feature_names, importances), key=lambda x: x[1], reverse=True
@@ -177,7 +191,9 @@ def handler(event: dict, context) -> dict:
         "trained_at": datetime.now(timezone.utc).isoformat(),
         "game_count": len(games),
         "feature_count": feat_meta["feature_count"],
-        "top_features": [{"name": n, "importance": round(float(i), 4)} for n, i in top_features],
+        "top_features": [
+            {"name": n, "importance": round(float(i), 4)} for n, i in top_features
+        ],
         "genre_classes": feat_meta["genre_classes"],
         "tag_features": feat_meta["tag_features"],
         "model_version": datetime.now(timezone.utc).strftime("%Y%m%d%H%M"),
@@ -189,15 +205,21 @@ def handler(event: dict, context) -> dict:
     # Generate taste profile via Bedrock (one-time cost)
     try:
         profile_text = generate_taste_profile(games)
-        profile_table.put_item(Item={
-            "profile_id": "main",
-            "text": profile_text,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "game_count": len(games),
-            "top_features": metadata["top_features"],
-        })
+        profile_table.put_item(
+            Item={
+                "profile_id": "main",
+                "text": profile_text,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "game_count": len(games),
+                "top_features": metadata["top_features"],
+            }
+        )
         logger.info("Taste profile saved")
     except Exception as e:
         logger.error("Bedrock taste profile failed", error=str(e))
 
-    return {"status": "ok", "game_count": len(games), "model_version": metadata["model_version"]}
+    return {
+        "status": "ok",
+        "game_count": len(games),
+        "model_version": metadata["model_version"],
+    }

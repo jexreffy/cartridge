@@ -1,12 +1,12 @@
 """
 Read Lambda — serves the /library and /profile API routes.
 """
+
 import json
 import os
 from decimal import Decimal
 
 import boto3
-from boto3.dynamodb.conditions import Attr
 
 from shared import logger
 
@@ -34,7 +34,10 @@ def get_library() -> dict:
     items.sort(key=lambda x: float(x.get("my_score", 0)), reverse=True)
     return {
         "statusCode": 200,
-        "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+        },
         "body": json.dumps(items, default=decimal_default),
     }
 
@@ -43,10 +46,16 @@ def get_profile() -> dict:
     resp = profile_table.get_item(Key={"profile_id": "main"})
     item = resp.get("Item")
     if not item:
-        return {"statusCode": 404, "body": json.dumps({"error": "Profile not generated yet"})}
+        return {
+            "statusCode": 404,
+            "body": json.dumps({"error": "Profile not generated yet"}),
+        }
     return {
         "statusCode": 200,
-        "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+        },
         "body": json.dumps(item, default=decimal_default),
     }
 

@@ -3,6 +3,7 @@ Import Lambda — triggered by S3 PUT of a CSV file.
 Parses the CSV, enriches each game via RAWG, writes to DynamoDB,
 then invokes the Train Lambda to refit the model.
 """
+
 import csv
 import io
 import json
@@ -13,7 +14,7 @@ import urllib.parse
 import boto3
 
 from shared import logger
-from shared.rawg import get_api_key, search_game, get_game_detail, extract_metadata
+from shared.rawg import search_game, get_game_detail, extract_metadata
 
 GAMES_TABLE = os.environ["GAMES_TABLE"]
 TRAIN_FUNCTION = os.environ["TRAIN_FUNCTION"]
@@ -52,13 +53,15 @@ def parse_csv(content: str) -> list[dict]:
         if times_completed is not None:
             times_completed = max(0, min(4, times_completed))
 
-        games.append({
-            "title": row["title"].strip(),
-            "my_score": my_score,
-            "weight": weight,
-            "times_completed": times_completed,
-            "notes": row.get("notes", "").strip(),
-        })
+        games.append(
+            {
+                "title": row["title"].strip(),
+                "my_score": my_score,
+                "weight": weight,
+                "times_completed": times_completed,
+                "notes": row.get("notes", "").strip(),
+            }
+        )
     return games
 
 
@@ -68,15 +71,17 @@ def enrich_and_store(game: dict, api_key: str) -> None:
     if not result:
         logger.warning("RAWG search returned no results", title=title)
         # Store with user data only, no enrichment
-        table.put_item(Item={
-            "game_id": title.lower().replace(" ", "-"),
-            "title": title,
-            "my_score": game["my_score"],
-            "weight": game["weight"],
-            "times_completed": game.get("times_completed"),
-            "notes": game["notes"],
-            "enriched": False,
-        })
+        table.put_item(
+            Item={
+                "game_id": title.lower().replace(" ", "-"),
+                "title": title,
+                "my_score": game["my_score"],
+                "weight": game["weight"],
+                "times_completed": game.get("times_completed"),
+                "notes": game["notes"],
+                "enriched": False,
+            }
+        )
         return
 
     time.sleep(0.25)  # gentle rate limiting
@@ -96,7 +101,9 @@ def enrich_and_store(game: dict, api_key: str) -> None:
         item["times_completed"] = game["times_completed"]
 
     table.put_item(Item=item)
-    logger.info("Stored game", title=title, rawg_slug=meta["rawg_slug"], score=game["my_score"])
+    logger.info(
+        "Stored game", title=title, rawg_slug=meta["rawg_slug"], score=game["my_score"]
+    )
 
 
 def handler(event: dict, context) -> dict:

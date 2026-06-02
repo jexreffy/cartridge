@@ -1,4 +1,5 @@
 """Structured JSON logger — consistent with Pulse project pattern."""
+
 import json
 import logging
 import sys
