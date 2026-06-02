@@ -1,0 +1,79 @@
+name: Deploy Cartridge
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Set RAWG API key in SSM
+        run: |
+          aws ssm put-parameter \
+            --name "/cartridge/rawg-api-key" \
+            --value "${{ secrets.RAWG_API_KEY }}" \
+            --type "SecureString" \
+            --overwrite \
+            --region us-east-1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Lint & test Python
+        working-directory: api
+        run: |
+          pip install black ruff pytest
+          pip install -r requirements-dev.txt
+          black --check .
+          ruff check .
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build & lint frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+
+      - name: Deploy CDK stacks
+        working-directory: cdk
+        run: |
+          npm ci
+          npm run build
+          npx cdk deploy --all --require-approval never
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
+
+      - name: Sync frontend to S3
+        run: |
+          BUCKET=$(aws cloudformation list-exports \
+            --query "Exports[?Name=='CartridgeFrontendBucket'].Value" \
+            --output text)
+          aws s3 sync frontend/dist s3://$BUCKET --delete
+
+      - name: Invalidate CloudFront
+        run: |
+          DIST_ID=$(aws cloudformation list-exports \
+            --query "Exports[?Name=='CartridgeDistributionId'].Value" \
+            --output text)
+          aws cloudfront create-invalidation --distribution-id $DIST_ID --paths "/*"

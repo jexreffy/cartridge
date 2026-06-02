@@ -1,0 +1,10 @@
+.app { max-width: 1200px; margin: 0 auto; padding: 0 1rem; }
+.header { text-align: center; padding: 2rem 0 1rem; border-bottom: 1px solid #2a2a35; margin-bottom: 2rem; }
+.header h1 { font-size: 2rem; font-weight: 700; }
+.subtitle { color: #888; margin-top: 0.25rem; font-size: 0.9rem; }
+.tabs { display: flex; justify-content: center; gap: 0.5rem; margin-top: 1.5rem; }
+.tab { background: #1a1a24; border: 1px solid #2a2a35; color: #ccc; padding: 0.5rem 1.25rem;
+  border-radius: 6px; cursor: pointer; font-size: 0.95rem; transition: all 0.15s; }
+.tab:hover { background: #22222e; }
+.tab.active { background: #6c3fff; border-color: #6c3fff; color: #fff; font-weight: 600; }
+.main { padding-bottom: 3rem; }

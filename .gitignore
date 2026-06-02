@@ -1,0 +1,17 @@
+node_modules/
+.env
+.env.local
+cdk/cdk.out/
+cdk/*.js
+cdk/*.d.ts
+cdk/lib/*.js
+cdk/lib/*.d.ts
+cdk/bin/*.js
+cdk/bin/*.d.ts
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+.venv/
+*.pkl
+
