@@ -15,7 +15,7 @@ interface ImportStackProps extends cdk.StackProps {
   modelBucket: s3.Bucket;
   gamesTable: dynamodb.Table;
   profileTable: dynamodb.Table;
-  rawgKeyParam: ssm.StringParameter;
+  rawgKeyParam: ssm.IStringParameter;
 }
 
 

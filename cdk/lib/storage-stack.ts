@@ -14,7 +14,7 @@ export class StorageStack extends cdk.Stack {
   public readonly gamesTable: dynamodb.Table;
   public readonly predictionsTable: dynamodb.Table;
   public readonly profileTable: dynamodb.Table;
-  public readonly rawgKeyParam: ssm.StringParameter;
+  public readonly rawgKeyParam: ssm.IStringParameter;
 
   constructor(scope: Construct, id: string, props: StorageStackProps) {
     super(scope, id, props);
@@ -52,12 +52,10 @@ export class StorageStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
-    // SSM: RAWG API key placeholder (user sets real value in console or via CLI)
-    this.rawgKeyParam = new ssm.StringParameter(this, 'RawgApiKey', {
-      parameterName: '/cartridge/rawg-api-key',
-      stringValue: 'PLACEHOLDER',
-      description: 'RAWG API key — set real value after deploy',
-    });
+    // SSM: Reference the RAWG key by name — the workflow sets the real value via put-parameter
+    this.rawgKeyParam = ssm.StringParameter.fromStringParameterName(
+      this, 'RawgApiKey', '/cartridge/rawg-api-key',
+    );
 
     new cdk.CfnOutput(this, 'ModelBucketName', { value: this.modelBucket.bucketName });
     new cdk.CfnOutput(this, 'RawgParamName', { value: this.rawgKeyParam.parameterName });

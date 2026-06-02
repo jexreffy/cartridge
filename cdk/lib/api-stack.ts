@@ -17,7 +17,7 @@ interface ApiStackProps extends cdk.StackProps {
   predictionsTable: dynamodb.Table;
   profileTable: dynamodb.Table;
   modelBucket: s3.Bucket;
-  rawgKeyParam: ssm.StringParameter;
+  rawgKeyParam: ssm.IStringParameter;
   trainFunction: lambda.Function;
 }
 
