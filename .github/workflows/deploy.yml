@@ -60,20 +60,21 @@ jobs:
         run: |
           npm ci
           npm run build
-          npx cdk deploy --all --require-approval never
+          npx cdk deploy --all --require-approval never --exclude CartridgeCdn
         env:
           CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
 
-      - name: Sync frontend to S3
-        run: |
-          BUCKET=$(aws cloudformation list-exports \
-            --query "Exports[?Name=='CartridgeFrontendBucket'].Value" \
-            --output text)
-          aws s3 sync frontend/dist s3://$BUCKET --delete
-
-      - name: Invalidate CloudFront
-        run: |
-          DIST_ID=$(aws cloudformation list-exports \
-            --query "Exports[?Name=='CartridgeDistributionId'].Value" \
-            --output text)
-          aws cloudfront create-invalidation --distribution-id $DIST_ID --paths "/*"
+      # CartridgeCdn skipped until AWS account CloudFront restriction lifts
+      # Uncomment these steps and remove --exclude CartridgeCdn above when ready
+      # - name: Sync frontend to S3
+      #   run: |
+      #     BUCKET=$(aws cloudformation list-exports \
+      #       --query "Exports[?Name=='CartridgeFrontendBucket'].Value" \
+      #       --output text)
+      #     aws s3 sync frontend/dist s3://$BUCKET --delete
+      # - name: Invalidate CloudFront
+      #   run: |
+      #     DIST_ID=$(aws cloudformation list-exports \
+      #       --query "Exports[?Name=='CartridgeDistributionId'].Value" \
+      #       --output text)
+      #     aws cloudfront create-invalidation --distribution-id $DIST_ID --paths "/*"
