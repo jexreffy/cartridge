@@ -41,7 +41,8 @@ def handler(event: dict, context) -> dict:
 
 def get_feed() -> dict:
     resp = predictions_table.scan(
-        FilterExpression="source = :s",
+        FilterExpression="#src = :s",
+        ExpressionAttributeNames={"#src": "source"},
         ExpressionAttributeValues={":s": "feed"},
     )
     items = resp.get("Items", [])
