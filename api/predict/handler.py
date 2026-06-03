@@ -57,10 +57,10 @@ def build_feature_vector(
     metacritic = float(meta.get("metacritic_score") or 70) / 100.0
     release_year = float(meta.get("release_year") or 2015)
     release_norm = (release_year - 1985) / (2026 - 1985)
-    times_norm = 0.0  # unknown for new games
+    weighted_replay = 0.0  # unknown for new games
 
     return np.concatenate(
-        [genres_vec, tags_vec, [metacritic, release_norm, times_norm]]
+        [genres_vec, tags_vec, [metacritic, release_norm, weighted_replay]]
     )
 
 
@@ -94,7 +94,7 @@ def compute_factor_breakdown(
                     "matched": True,
                 }
             )
-        elif name in ("metacritic", "release_year", "times_completed"):
+        elif name in ("metacritic", "release_year", "weighted_replay"):
             factors.append(
                 {
                     "feature": name,

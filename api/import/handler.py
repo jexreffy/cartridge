@@ -48,17 +48,19 @@ def parse_csv(content: str) -> list[dict]:
         weight = int(row.get("weight", "").strip() or "3")
         weight = max(1, min(5, weight))
 
-        times_raw = row.get("times_completed", "").strip()
-        times_completed = int(times_raw) if times_raw else None
-        if times_completed is not None:
-            times_completed = max(0, min(4, times_completed))
+        replayed_raw = row.get("replayed", "").strip()
+        replayed = int(replayed_raw) if replayed_raw in ("0", "1") else None
+
+        release_year_raw = row.get("release_year", "").strip()
+        csv_release_year = int(release_year_raw) if release_year_raw.isdigit() else None
 
         games.append(
             {
                 "title": row["title"].strip(),
                 "my_score": my_score,
                 "weight": weight,
-                "times_completed": times_completed,
+                "replayed": replayed,
+                "csv_release_year": csv_release_year,
                 "notes": row.get("notes", "").strip(),
             }
         )
@@ -77,7 +79,7 @@ def enrich_and_store(game: dict, api_key: str) -> None:
                 "title": title,
                 "my_score": game["my_score"],
                 "weight": game["weight"],
-                "times_completed": game.get("times_completed"),
+                "replayed": game.get("replayed"),
                 "notes": game["notes"],
                 "enriched": False,
             }
@@ -97,8 +99,11 @@ def enrich_and_store(game: dict, api_key: str) -> None:
         "enriched": True,
         **{k: v for k, v in meta.items() if v is not None},
     }
-    if game.get("times_completed") is not None:
-        item["times_completed"] = game["times_completed"]
+    if game.get("replayed") is not None:
+        item["replayed"] = game["replayed"]
+    # CSV release_year overrides RAWG if provided
+    if game.get("csv_release_year"):
+        item["release_year"] = game["csv_release_year"]
 
     table.put_item(Item=item)
     logger.info(

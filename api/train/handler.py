@@ -72,11 +72,14 @@ def build_features(
         release_year = float(g.get("release_year") or 2010)
         release_norm = (release_year - 1985) / (2026 - 1985)
 
-        times = float(g.get("times_completed") or 0)
-        times_norm = min(times, 4) / 4.0
+        # Weighted replay: replaying an older game is a stronger signal than a new one.
+        # A 1995 game replayed today carries ~3× the weight of a 2024 game replayed.
+        replayed = float(g.get("replayed") or 0)
+        age_years = max(0, 2026 - release_year)
+        weighted_replay = replayed * (1.0 + age_years / 15.0)
 
         row = np.concatenate(
-            [genres_vec, tags_vec, [metacritic, release_norm, times_norm]]
+            [genres_vec, tags_vec, [metacritic, release_norm, weighted_replay]]
         )
         rows.append(row)
         targets.append(float(g["my_score"]))
@@ -180,7 +183,7 @@ def handler(event: dict, context) -> dict:
     all_feature_names = (
         list(genre_classes)
         + list(tag_features)
-        + ["metacritic", "release_year", "times_completed"]
+        + ["metacritic", "release_year", "weighted_replay"]
     )
 
     top_features = sorted(
