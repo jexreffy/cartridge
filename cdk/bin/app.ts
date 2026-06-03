@@ -25,7 +25,6 @@ const importStack = new ImportStack(app, 'CartridgeImport', {
   modelBucket: storage.modelBucket,
   gamesTable: storage.gamesTable,
   profileTable: storage.profileTable,
-  rawgKeyParam: storage.rawgKeyParam,
 });
 
 const api = new ApiStack(app, 'CartridgeApi', {
@@ -36,7 +35,6 @@ const api = new ApiStack(app, 'CartridgeApi', {
   predictionsTable: storage.predictionsTable,
   profileTable: storage.profileTable,
   modelBucket: storage.modelBucket,
-  rawgKeyParam: storage.rawgKeyParam,
   trainFunction: importStack.trainFunction,
 });
 

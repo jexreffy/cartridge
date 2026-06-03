@@ -5,10 +5,10 @@ import * as integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
+import { RAWG_PARAM_NAME } from './storage-stack';
 
 interface ApiStackProps extends cdk.StackProps {
   vpc: ec2.Vpc;
@@ -17,7 +17,6 @@ interface ApiStackProps extends cdk.StackProps {
   predictionsTable: dynamodb.Table;
   profileTable: dynamodb.Table;
   modelBucket: s3.Bucket;
-  rawgKeyParam: ssm.IStringParameter;
   trainFunction: lambda.Function;
 }
 
@@ -28,9 +27,11 @@ export class ApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { vpc, lambdaSg, gamesTable, predictionsTable, profileTable, modelBucket, rawgKeyParam, trainFunction } = props;
+    const { vpc, lambdaSg, gamesTable, predictionsTable, profileTable, modelBucket, trainFunction } = props;
     const RUNTIME = lambda.Runtime.PYTHON_3_12;
     const apiCode = lambda.Code.fromAsset('../api');
+
+    const ssmParamArn = `arn:aws:ssm:${this.region}:${this.account}:parameter${RAWG_PARAM_NAME}`;
 
     const sharedVpcProps = {
       vpc,
@@ -78,13 +79,16 @@ export class ApiStack extends cdk.Stack {
         PREDICTIONS_TABLE: predictionsTable.tableName,
         PROFILE_TABLE: profileTable.tableName,
         MODEL_BUCKET: modelBucket.bucketName,
-        RAWG_API_KEY_PARAM: rawgKeyParam.parameterName,
+        RAWG_API_KEY_PARAM: RAWG_PARAM_NAME,
       },
     });
     predictionsTable.grantWriteData(predictFunction);
     profileTable.grantReadData(predictFunction);
     modelBucket.grantRead(predictFunction);
-    rawgKeyParam.grantRead(predictFunction);
+    predictFunction.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ssm:GetParameter'],
+      resources: [ssmParamArn],
+    }));
 
     // Feed Lambda — outside VPC (needs RAWG + invokes Predict)
     this.feedFunction = new lambda.Function(this, 'FeedFunction', {
@@ -102,12 +106,15 @@ export class ApiStack extends cdk.Stack {
       environment: {
         PREDICTIONS_TABLE: predictionsTable.tableName,
         PREDICT_FUNCTION: predictFunction.functionName,
-        RAWG_API_KEY_PARAM: rawgKeyParam.parameterName,
+        RAWG_API_KEY_PARAM: RAWG_PARAM_NAME,
       },
     });
     predictionsTable.grantReadWriteData(this.feedFunction);
-    rawgKeyParam.grantRead(this.feedFunction);
     predictFunction.grantInvoke(this.feedFunction);
+    this.feedFunction.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ssm:GetParameter'],
+      resources: [ssmParamArn],
+    }));
 
     // API Gateway
     const api = new apigw.HttpApi(this, 'HttpApi', {

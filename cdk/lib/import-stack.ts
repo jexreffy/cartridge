@@ -5,9 +5,9 @@ import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
+import { RAWG_PARAM_NAME } from './storage-stack';
 
 interface ImportStackProps extends cdk.StackProps {
   vpc: ec2.Vpc;
@@ -15,9 +15,7 @@ interface ImportStackProps extends cdk.StackProps {
   modelBucket: s3.Bucket;
   gamesTable: dynamodb.Table;
   profileTable: dynamodb.Table;
-  rawgKeyParam: ssm.IStringParameter;
 }
-
 
 export class ImportStack extends cdk.Stack {
   public readonly trainFunction: lambda.Function;
@@ -26,7 +24,7 @@ export class ImportStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ImportStackProps) {
     super(scope, id, props);
 
-    const { vpc, lambdaSg, modelBucket, gamesTable, profileTable, rawgKeyParam } = props;
+    const { vpc, lambdaSg, modelBucket, gamesTable, profileTable } = props;
 
     // CSV bucket lives here to avoid cross-stack S3 notification circular dependency
     this.csvBucket = new s3.Bucket(this, 'CsvBucket', {
@@ -35,10 +33,11 @@ export class ImportStack extends cdk.Stack {
       autoDeleteObjects: true,
       lifecycleRules: [{ expiration: cdk.Duration.days(30) }],
     });
+
     const RUNTIME = lambda.Runtime.PYTHON_3_12;
     const apiCode = lambda.Code.fromAsset('../api');
 
-    // Train Lambda — no VPC needed (reads DynamoDB via endpoint, writes S3, calls Bedrock)
+    // Train Lambda — no VPC needed (reads DynamoDB, writes S3, calls Bedrock)
     this.trainFunction = new lambda.Function(this, 'TrainFunction', {
       functionName: 'cartridge-train',
       runtime: RUNTIME,
@@ -82,14 +81,19 @@ export class ImportStack extends cdk.Stack {
       environment: {
         GAMES_TABLE: gamesTable.tableName,
         TRAIN_FUNCTION: this.trainFunction.functionName,
-        RAWG_API_KEY_PARAM: rawgKeyParam.parameterName,
+        RAWG_API_KEY_PARAM: RAWG_PARAM_NAME,
       },
     });
 
     this.csvBucket.grantRead(importFunction);
     gamesTable.grantWriteData(importFunction);
-    rawgKeyParam.grantRead(importFunction);
     this.trainFunction.grantInvoke(importFunction);
+
+    // Grant SSM read access by ARN (avoids CloudFormation SecureString resolution issue)
+    importFunction.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ssm:GetParameter'],
+      resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter${RAWG_PARAM_NAME}`],
+    }));
 
     // Trigger import when CSV lands in bucket
     this.csvBucket.addEventNotification(
