@@ -7,14 +7,11 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
-import { RAWG_PARAM_NAME } from './storage-stack';
+import { RAWG_PARAM_NAME, TABLE_NAMES, MODEL_BUCKET_NAME } from './storage-stack';
 
 interface ImportStackProps extends cdk.StackProps {
   vpc: ec2.Vpc;
   lambdaSg: ec2.SecurityGroup;
-  modelBucket: s3.Bucket;
-  gamesTable: dynamodb.Table;
-  profileTable: dynamodb.Table;
 }
 
 export class ImportStack extends cdk.Stack {
@@ -24,7 +21,12 @@ export class ImportStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ImportStackProps) {
     super(scope, id, props);
 
-    const { vpc, lambdaSg, modelBucket, gamesTable, profileTable } = props;
+    const { vpc, lambdaSg } = props;
+
+    // Reference tables by name — no CloudFormation cross-stack export dependency
+    const gamesTable = dynamodb.Table.fromTableName(this, 'GamesTable', TABLE_NAMES.GAMES);
+    const profileTable = dynamodb.Table.fromTableName(this, 'ProfileTable', TABLE_NAMES.PROFILE);
+    const modelBucket = s3.Bucket.fromBucketName(this, 'ModelBucket', MODEL_BUCKET_NAME(this.account));
 
     // CSV bucket lives here to avoid cross-stack S3 notification circular dependency
     this.csvBucket = new s3.Bucket(this, 'CsvBucket', {
@@ -59,9 +61,9 @@ export class ImportStack extends cdk.Stack {
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
       environment: {
-        GAMES_TABLE: gamesTable.tableName,
-        PROFILE_TABLE: profileTable.tableName,
-        MODEL_BUCKET: modelBucket.bucketName,
+        GAMES_TABLE: TABLE_NAMES.GAMES,
+        PROFILE_TABLE: TABLE_NAMES.PROFILE,
+        MODEL_BUCKET: MODEL_BUCKET_NAME(this.account),
       },
     });
 
@@ -87,7 +89,7 @@ export class ImportStack extends cdk.Stack {
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
       environment: {
-        GAMES_TABLE: gamesTable.tableName,
+        GAMES_TABLE: TABLE_NAMES.GAMES,
         TRAIN_FUNCTION: this.trainFunction.functionName,
         RAWG_API_KEY_PARAM: RAWG_PARAM_NAME,
       },
@@ -97,7 +99,6 @@ export class ImportStack extends cdk.Stack {
     gamesTable.grantWriteData(importFunction);
     this.trainFunction.grantInvoke(importFunction);
 
-    // Grant SSM read access by ARN (avoids CloudFormation SecureString resolution issue)
     importFunction.addToRolePolicy(new iam.PolicyStatement({
       actions: ['ssm:GetParameter'],
       resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter${RAWG_PARAM_NAME}`],

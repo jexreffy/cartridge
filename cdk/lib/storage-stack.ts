@@ -11,25 +11,30 @@ interface StorageStackProps extends cdk.StackProps {
 // The RAWG API key SSM parameter name — set by the deploy workflow via put-parameter
 export const RAWG_PARAM_NAME = '/cartridge/rawg-api-key';
 
-export class StorageStack extends cdk.Stack {
-  public readonly modelBucket: s3.Bucket;
-  public readonly gamesTable: dynamodb.Table;
-  public readonly predictionsTable: dynamodb.Table;
-  public readonly profileTable: dynamodb.Table;
+// Table names as constants — other stacks reference these via Table.fromTableName()
+// to avoid CloudFormation cross-stack export/import coupling.
+export const TABLE_NAMES = {
+  GAMES: 'cartridge-games-v2',
+  PREDICTIONS: 'cartridge-predictions-v2',
+  PROFILE: 'cartridge-profile-v2',
+} as const;
 
+export const MODEL_BUCKET_NAME = (account: string) => `cartridge-model-${account}`;
+
+export class StorageStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: StorageStackProps) {
     super(scope, id, props);
 
     // S3: Model artifacts
-    this.modelBucket = new s3.Bucket(this, 'ModelBucket', {
-      bucketName: `cartridge-model-${this.account}`,
+    new s3.Bucket(this, 'ModelBucket', {
+      bucketName: MODEL_BUCKET_NAME(this.account),
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       versioned: true,
     });
 
     // DynamoDB: Game library — PK=user_id, SK=game_id (multi-user ready)
-    this.gamesTable = new dynamodb.Table(this, 'GamesTable', {
-      tableName: 'cartridge-games-v2',
+    new dynamodb.Table(this, 'GamesTable', {
+      tableName: TABLE_NAMES.GAMES,
       partitionKey: { name: 'user_id', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'game_id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -37,8 +42,8 @@ export class StorageStack extends cdk.Stack {
     });
 
     // DynamoDB: Predictions cache — PK=user_id, SK=game_id#pred#date
-    this.predictionsTable = new dynamodb.Table(this, 'PredictionsTable', {
-      tableName: 'cartridge-predictions-v2',
+    new dynamodb.Table(this, 'PredictionsTable', {
+      tableName: TABLE_NAMES.PREDICTIONS,
       partitionKey: { name: 'user_id', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -47,13 +52,11 @@ export class StorageStack extends cdk.Stack {
     });
 
     // DynamoDB: Taste profile — PK=user_id
-    this.profileTable = new dynamodb.Table(this, 'ProfileTable', {
-      tableName: 'cartridge-profile-v2',
+    new dynamodb.Table(this, 'ProfileTable', {
+      tableName: TABLE_NAMES.PROFILE,
       partitionKey: { name: 'user_id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
-
-    new cdk.CfnOutput(this, 'ModelBucketName', { value: this.modelBucket.bucketName });
   }
 }

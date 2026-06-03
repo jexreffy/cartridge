@@ -10,15 +10,11 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { Construct } from 'constructs';
-import { RAWG_PARAM_NAME } from './storage-stack';
+import { RAWG_PARAM_NAME, TABLE_NAMES, MODEL_BUCKET_NAME } from './storage-stack';
 
 interface ApiStackProps extends cdk.StackProps {
   vpc: ec2.Vpc;
   lambdaSg: ec2.SecurityGroup;
-  gamesTable: dynamodb.Table;
-  predictionsTable: dynamodb.Table;
-  profileTable: dynamodb.Table;
-  modelBucket: s3.Bucket;
   csvBucket: s3.Bucket;
   trainFunction: lambda.Function;
   userPool: cognito.UserPool;
@@ -32,7 +28,14 @@ export class ApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { vpc, lambdaSg, gamesTable, predictionsTable, profileTable, modelBucket, csvBucket, trainFunction, userPool, userPoolClient } = props;
+    const { vpc, lambdaSg, csvBucket, trainFunction, userPool, userPoolClient } = props;
+
+    // Reference tables and bucket by name — no CloudFormation cross-stack export dependency
+    const gamesTable = dynamodb.Table.fromTableName(this, 'GamesTable', TABLE_NAMES.GAMES);
+    const predictionsTable = dynamodb.Table.fromTableName(this, 'PredictionsTable', TABLE_NAMES.PREDICTIONS);
+    const profileTable = dynamodb.Table.fromTableName(this, 'ProfileTable', TABLE_NAMES.PROFILE);
+    const modelBucket = s3.Bucket.fromBucketName(this, 'ModelBucket', MODEL_BUCKET_NAME(this.account));
+
     const RUNTIME = lambda.Runtime.PYTHON_3_12;
     const apiCode = lambda.Code.fromAsset('../api', {
       bundling: {
@@ -67,8 +70,8 @@ export class ApiStack extends cdk.Stack {
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
       environment: {
-        GAMES_TABLE: gamesTable.tableName,
-        PROFILE_TABLE: profileTable.tableName,
+        GAMES_TABLE: TABLE_NAMES.GAMES,
+        PROFILE_TABLE: TABLE_NAMES.PROFILE,
       },
     });
     gamesTable.grantReadData(readFunction);
@@ -88,7 +91,7 @@ export class ApiStack extends cdk.Stack {
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
       environment: {
-        GAMES_TABLE: gamesTable.tableName,
+        GAMES_TABLE: TABLE_NAMES.GAMES,
         CSV_BUCKET: csvBucket.bucketName,
         TRAIN_FUNCTION: trainFunction.functionName,
         RAWG_API_KEY_PARAM: RAWG_PARAM_NAME,
@@ -116,9 +119,9 @@ export class ApiStack extends cdk.Stack {
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
       environment: {
-        PREDICTIONS_TABLE: predictionsTable.tableName,
-        PROFILE_TABLE: profileTable.tableName,
-        MODEL_BUCKET: modelBucket.bucketName,
+        PREDICTIONS_TABLE: TABLE_NAMES.PREDICTIONS,
+        PROFILE_TABLE: TABLE_NAMES.PROFILE,
+        MODEL_BUCKET: MODEL_BUCKET_NAME(this.account),
         RAWG_API_KEY_PARAM: RAWG_PARAM_NAME,
       },
     });
@@ -144,8 +147,8 @@ export class ApiStack extends cdk.Stack {
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
       environment: {
-        PREDICTIONS_TABLE: predictionsTable.tableName,
-        PROFILE_TABLE: profileTable.tableName,
+        PREDICTIONS_TABLE: TABLE_NAMES.PREDICTIONS,
+        PROFILE_TABLE: TABLE_NAMES.PROFILE,
         PREDICT_FUNCTION: predictFunction.functionName,
         RAWG_API_KEY_PARAM: RAWG_PARAM_NAME,
       },
@@ -158,13 +161,11 @@ export class ApiStack extends cdk.Stack {
       resources: [ssmParamArn],
     }));
 
-    // Cognito JWT authorizer — validates IdToken from frontend
+    // Cognito JWT authorizer
     const jwtAuthorizer = new authorizers.HttpJwtAuthorizer(
       'CognitoAuthorizer',
       userPool.userPoolProviderUrl,
-      {
-        jwtAudience: [userPoolClient.userPoolClientId],
-      },
+      { jwtAudience: [userPoolClient.userPoolClientId] },
     );
 
     // API Gateway
@@ -183,24 +184,19 @@ export class ApiStack extends cdk.Stack {
       },
     });
 
-    const readInt  = new integrations.HttpLambdaIntegration('ReadInt',   readFunction);
-    const gamesInt = new integrations.HttpLambdaIntegration('GamesInt',  gamesFunction);
+    const readInt   = new integrations.HttpLambdaIntegration('ReadInt',   readFunction);
+    const gamesInt  = new integrations.HttpLambdaIntegration('GamesInt',  gamesFunction);
     const predictInt = new integrations.HttpLambdaIntegration('PredictInt', predictFunction);
-    const feedInt  = new integrations.HttpLambdaIntegration('FeedInt',   this.feedFunction);
+    const feedInt   = new integrations.HttpLambdaIntegration('FeedInt',   this.feedFunction);
 
-    // Read routes
-    api.addRoutes({ path: '/library',  methods: [apigw.HttpMethod.GET],    integration: readInt,    authorizer: jwtAuthorizer });
-    api.addRoutes({ path: '/profile',  methods: [apigw.HttpMethod.GET],    integration: readInt,    authorizer: jwtAuthorizer });
-
-    // Write routes
-    api.addRoutes({ path: '/import',           methods: [apigw.HttpMethod.POST],   integration: gamesInt, authorizer: jwtAuthorizer });
-    api.addRoutes({ path: '/games',            methods: [apigw.HttpMethod.POST],   integration: gamesInt, authorizer: jwtAuthorizer });
-    api.addRoutes({ path: '/games/{game_id}',  methods: [apigw.HttpMethod.PUT, apigw.HttpMethod.DELETE], integration: gamesInt, authorizer: jwtAuthorizer });
-    api.addRoutes({ path: '/train',            methods: [apigw.HttpMethod.POST],   integration: gamesInt, authorizer: jwtAuthorizer });
-
-    // Predict + feed
-    api.addRoutes({ path: '/predict', methods: [apigw.HttpMethod.GET],    integration: predictInt, authorizer: jwtAuthorizer });
-    api.addRoutes({ path: '/feed',    methods: [apigw.HttpMethod.GET],    integration: feedInt,    authorizer: jwtAuthorizer });
+    api.addRoutes({ path: '/library',          methods: [apigw.HttpMethod.GET],                             integration: readInt,    authorizer: jwtAuthorizer });
+    api.addRoutes({ path: '/profile',          methods: [apigw.HttpMethod.GET],                             integration: readInt,    authorizer: jwtAuthorizer });
+    api.addRoutes({ path: '/import',           methods: [apigw.HttpMethod.POST],                            integration: gamesInt,   authorizer: jwtAuthorizer });
+    api.addRoutes({ path: '/games',            methods: [apigw.HttpMethod.POST],                            integration: gamesInt,   authorizer: jwtAuthorizer });
+    api.addRoutes({ path: '/games/{game_id}',  methods: [apigw.HttpMethod.PUT, apigw.HttpMethod.DELETE],    integration: gamesInt,   authorizer: jwtAuthorizer });
+    api.addRoutes({ path: '/train',            methods: [apigw.HttpMethod.POST],                            integration: gamesInt,   authorizer: jwtAuthorizer });
+    api.addRoutes({ path: '/predict',          methods: [apigw.HttpMethod.GET],                             integration: predictInt, authorizer: jwtAuthorizer });
+    api.addRoutes({ path: '/feed',             methods: [apigw.HttpMethod.GET],                             integration: feedInt,    authorizer: jwtAuthorizer });
 
     this.apiUrl = api.apiEndpoint;
 
