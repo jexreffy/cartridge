@@ -40,7 +40,7 @@ export class ImportStack extends cdk.Stack {
         image: RUNTIME.bundlingImage,
         command: [
           'bash', '-c',
-          'pip install -r requirements.txt -t /asset-output && cp -r . /asset-output',
+          'pip install -r requirements.txt -t /asset-output --no-compile && cp -r . /asset-output',
         ],
       },
     });
