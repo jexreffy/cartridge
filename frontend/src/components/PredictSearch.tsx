@@ -64,10 +64,43 @@ export default function PredictSearch() {
     <div style={{ maxWidth: 700, margin: '0 auto' }}>
       {profile && (
         <div style={{ background: '#1a1a24', border: '1px solid #2a2a35', borderRadius: 8,
-          padding: '1rem 1.25rem', marginBottom: '2rem' }}>
-          <h3 style={{ marginBottom: '0.5rem', fontSize: '0.85rem', textTransform: 'uppercase',
-            letterSpacing: '0.05em', color: '#888' }}>Your Taste Profile</h3>
-          <p style={{ fontSize: '0.9rem', lineHeight: 1.6, color: '#ccc' }}>{profile.text}</p>
+          padding: '1.25rem 1.5rem', marginBottom: '2rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+            <span style={{ fontSize: '1.2rem' }}>🎮</span>
+            <h3 style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.08em',
+              color: '#6c3fff', fontWeight: 700, margin: 0 }}>Your Taste Profile</h3>
+          </div>
+          {profile.text.split('\n\n').map((para, i) => {
+            const icons = ['🏆', '⚠️', '🔮'];
+            const labels = ['What you love', 'What turns you off', 'What to look for'];
+            return (
+              <div key={i} style={{ marginBottom: i < 2 ? '1rem' : 0,
+                paddingBottom: i < 2 ? '1rem' : 0,
+                borderBottom: i < 2 ? '1px solid #22222e' : 'none' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
+                  <span style={{ fontSize: '0.9rem' }}>{icons[i]}</span>
+                  <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.06em',
+                    color: '#666', fontWeight: 600 }}>{labels[i]}</span>
+                </div>
+                <p style={{ fontSize: '0.875rem', lineHeight: 1.65, color: '#bbb', margin: 0 }}>{para}</p>
+              </div>
+            );
+          })}
+          {profile.top_features && profile.top_features.length > 0 && (
+            <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #22222e' }}>
+              <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.06em',
+                color: '#666', fontWeight: 600 }}>Top signals in your model</span>
+              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+                {profile.top_features.slice(0, 8).map((f) => (
+                  <span key={f.name} style={{ fontSize: '0.75rem', background: '#2a1a4a',
+                    border: '1px solid #3a2a5a', color: '#a78bfa',
+                    padding: '0.2rem 0.55rem', borderRadius: 12 }}>
+                    {f.name} · {Math.round(Number(f.importance) * 100)}%
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
