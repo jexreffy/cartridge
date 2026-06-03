@@ -7,11 +7,14 @@ import { ImportStack } from '../lib/import-stack';
 import { ApiStack } from '../lib/api-stack';
 import { SchedulerStack } from '../lib/scheduler-stack';
 import { CdnStack } from '../lib/cdn-stack';
+import { AuthStack } from '../lib/auth-stack';
 
 const app = new cdk.App();
 const env = { account: process.env.CDK_DEFAULT_ACCOUNT, region: 'us-east-1' };
 
 const networking = new NetworkingStack(app, 'CartridgeNetworking', { env });
+
+const auth = new AuthStack(app, 'CartridgeAuth', { env });
 
 const storage = new StorageStack(app, 'CartridgeStorage', {
   env,
@@ -35,7 +38,10 @@ const api = new ApiStack(app, 'CartridgeApi', {
   predictionsTable: storage.predictionsTable,
   profileTable: storage.profileTable,
   modelBucket: storage.modelBucket,
+  csvBucket: importStack.csvBucket,
   trainFunction: importStack.trainFunction,
+  userPool: auth.userPool,
+  userPoolClient: auth.userPoolClient,
 });
 
 new SchedulerStack(app, 'CartridgeScheduler', {

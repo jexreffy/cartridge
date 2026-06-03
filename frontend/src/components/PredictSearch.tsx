@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { apiFetch } from '../api';
 
 interface Prediction {
   title: string;
@@ -20,7 +21,6 @@ interface Profile {
   top_features: { name: string; importance: number }[];
 }
 
-const API = import.meta.env.VITE_API_URL ?? '/api';
 const scoreColor = (s: number) => s >= 8 ? '#4ade80' : s >= 6 ? '#facc15' : '#f87171';
 
 export default function PredictSearch() {
@@ -31,7 +31,7 @@ export default function PredictSearch() {
   const [profile, setProfile] = useState<Profile | null>(null);
 
   useEffect(() => {
-    fetch(`${API}/profile`)
+    apiFetch('/profile')
       .then((r) => r.json())
       .then(setProfile)
       .catch(() => { /* profile may not exist yet */ });
@@ -43,7 +43,7 @@ export default function PredictSearch() {
     setError('');
     setResult(null);
     try {
-      const r = await fetch(`${API}/predict?title=${encodeURIComponent(query)}`);
+      const r = await apiFetch(`/predict?title=${encodeURIComponent(query)}`);
       const data = await r.json();
       if (!r.ok) throw new Error(data.error ?? 'Unknown error');
       setResult(data);

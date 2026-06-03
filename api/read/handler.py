@@ -1,5 +1,6 @@
 """
 Read Lambda — serves the /library and /profile API routes.
+Extracts user_id from the Cognito JWT authorizer claims.
 """
 
 import json
@@ -7,6 +8,7 @@ import os
 from decimal import Decimal
 
 import boto3
+from boto3.dynamodb.conditions import Key
 
 from shared import logger
 
@@ -24,12 +26,28 @@ def decimal_default(obj):
     raise TypeError
 
 
-def get_library() -> dict:
+def get_user_id(event: dict) -> str:
+    claims = (
+        event.get("requestContext", {})
+        .get("authorizer", {})
+        .get("jwt", {})
+        .get("claims", {})
+    )
+    user_id = claims.get("sub")
+    if not user_id:
+        raise ValueError("Missing user_id in JWT claims")
+    return user_id
+
+
+def get_library(user_id: str) -> dict:
     items = []
-    resp = games_table.scan()
+    resp = games_table.query(KeyConditionExpression=Key("user_id").eq(user_id))
     items.extend(resp["Items"])
     while "LastEvaluatedKey" in resp:
-        resp = games_table.scan(ExclusiveStartKey=resp["LastEvaluatedKey"])
+        resp = games_table.query(
+            KeyConditionExpression=Key("user_id").eq(user_id),
+            ExclusiveStartKey=resp["LastEvaluatedKey"],
+        )
         items.extend(resp["Items"])
     items.sort(key=lambda x: float(x.get("my_score", 0)), reverse=True)
     return {
@@ -42,8 +60,8 @@ def get_library() -> dict:
     }
 
 
-def get_profile() -> dict:
-    resp = profile_table.get_item(Key={"profile_id": "main"})
+def get_profile(user_id: str) -> dict:
+    resp = profile_table.get_item(Key={"user_id": user_id})
     item = resp.get("Item")
     if not item:
         return {
@@ -64,9 +82,14 @@ def handler(event: dict, context) -> dict:
     path = event.get("rawPath") or event.get("path", "/")
     logger.info("Read request", path=path)
 
+    try:
+        user_id = get_user_id(event)
+    except ValueError as e:
+        return {"statusCode": 401, "body": json.dumps({"error": str(e)})}
+
     if path == "/library":
-        return get_library()
+        return get_library(user_id)
     elif path == "/profile":
-        return get_profile()
+        return get_profile(user_id)
     else:
         return {"statusCode": 404, "body": json.dumps({"error": "Not found"})}

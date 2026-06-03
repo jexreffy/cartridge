@@ -1,7 +1,7 @@
 """
 Train Lambda — fits a GradientBoostingRegressor on the user's game library.
-Saves model artifact + metadata to S3.
-Calls Bedrock once to generate/refresh the taste profile.
+Saves model artifact + metadata to S3 under models/{user_id}/.
+Called by Import Lambda with payload {"user_id": "...", ...}
 """
 
 import json
@@ -10,10 +10,10 @@ from datetime import datetime, timezone
 
 import boto3
 import numpy as np
-from boto3.dynamodb.conditions import Attr
+from boto3.dynamodb.conditions import Key
 from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import MultiLabelBinarizer
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 from shared import logger
 from shared.model import save_model
@@ -33,17 +33,19 @@ TOP_GENRES = 20
 TOP_TAGS = 60
 
 
-def scan_all_games() -> list[dict]:
+def scan_user_games(user_id: str) -> list[dict]:
+    """Query all games for a specific user (PK=user_id)."""
     items = []
-    resp = games_table.scan(FilterExpression=Attr("my_score").exists())
+    resp = games_table.query(KeyConditionExpression=Key("user_id").eq(user_id))
     items.extend(resp["Items"])
     while "LastEvaluatedKey" in resp:
-        resp = games_table.scan(
-            FilterExpression=Attr("my_score").exists(),
+        resp = games_table.query(
+            KeyConditionExpression=Key("user_id").eq(user_id),
             ExclusiveStartKey=resp["LastEvaluatedKey"],
         )
         items.extend(resp["Items"])
-    return items
+    # Only train on games that have a score
+    return [g for g in items if g.get("my_score")]
 
 
 def build_features(
@@ -73,7 +75,7 @@ def build_features(
         release_norm = (release_year - 1985) / (2026 - 1985)
 
         # Weighted replay: replaying an older game is a stronger signal than a new one.
-        # A 1995 game replayed today carries ~3× the weight of a 2024 game replayed.
+        # A 1995 game replayed today carries ~3x the weight of a 2024 game replayed.
         replayed = float(g.get("replayed") or 0)
         age_years = max(0, 2026 - release_year)
         weighted_replay = replayed * (1.0 + age_years / 15.0)
@@ -155,12 +157,17 @@ Keep it under 250 words."""
 
 
 def handler(event: dict, context) -> dict:
-    games = scan_all_games()
+    user_id = event.get("user_id")
+    if not user_id:
+        logger.error("No user_id in train event", event=str(event))
+        return {"error": "user_id required"}
+
+    games = scan_user_games(user_id)
     if len(games) < 10:
-        logger.error("Not enough games to train", count=len(games))
+        logger.error("Not enough games to train", user_id=user_id, count=len(games))
         return {"error": "insufficient_data", "count": len(games)}
 
-    logger.info("Training model", game_count=len(games))
+    logger.info("Training model", user_id=user_id, game_count=len(games))
 
     X, y, w, feat_meta = build_features(games)
 
@@ -202,27 +209,28 @@ def handler(event: dict, context) -> dict:
         "model_version": datetime.now(timezone.utc).strftime("%Y%m%d%H%M"),
     }
 
-    save_model(model_bundle, metadata)
-    logger.info("Model saved", model_version=metadata["model_version"])
+    save_model(model_bundle, metadata, user_id)
+    logger.info("Model saved", user_id=user_id, model_version=metadata["model_version"])
 
-    # Generate taste profile via Bedrock (one-time cost)
+    # Generate taste profile via Bedrock (best-effort — fails gracefully on new accounts)
     try:
         profile_text = generate_taste_profile(games)
         profile_table.put_item(
             Item={
-                "profile_id": "main",
+                "user_id": user_id,
                 "text": profile_text,
                 "generated_at": datetime.now(timezone.utc).isoformat(),
                 "game_count": len(games),
                 "top_features": metadata["top_features"],
             }
         )
-        logger.info("Taste profile saved")
+        logger.info("Taste profile saved", user_id=user_id)
     except Exception as e:
-        logger.error("Bedrock taste profile failed", error=str(e))
+        logger.error("Bedrock taste profile failed", user_id=user_id, error=str(e))
 
     return {
         "status": "ok",
+        "user_id": user_id,
         "game_count": len(games),
         "model_version": metadata["model_version"],
     }

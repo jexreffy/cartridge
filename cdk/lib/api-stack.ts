@@ -2,11 +2,13 @@ import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as apigw from 'aws-cdk-lib/aws-apigatewayv2';
 import * as integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
+import * as authorizers from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { Construct } from 'constructs';
 import { RAWG_PARAM_NAME } from './storage-stack';
 
@@ -17,7 +19,10 @@ interface ApiStackProps extends cdk.StackProps {
   predictionsTable: dynamodb.Table;
   profileTable: dynamodb.Table;
   modelBucket: s3.Bucket;
+  csvBucket: s3.Bucket;
   trainFunction: lambda.Function;
+  userPool: cognito.UserPool;
+  userPoolClient: cognito.UserPoolClient;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -27,7 +32,7 @@ export class ApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { vpc, lambdaSg, gamesTable, predictionsTable, profileTable, modelBucket, trainFunction } = props;
+    const { vpc, lambdaSg, gamesTable, predictionsTable, profileTable, modelBucket, csvBucket, trainFunction, userPool, userPoolClient } = props;
     const RUNTIME = lambda.Runtime.PYTHON_3_12;
     const apiCode = lambda.Code.fromAsset('../api', {
       bundling: {
@@ -69,6 +74,34 @@ export class ApiStack extends cdk.Stack {
     gamesTable.grantReadData(readFunction);
     profileTable.grantReadData(readFunction);
 
+    // Games Lambda — write operations: add, edit, delete, import trigger, retrain
+    const gamesFunction = new lambda.Function(this, 'GamesFunction', {
+      functionName: 'cartridge-games',
+      runtime: RUNTIME,
+      handler: 'games/handler.handler',
+      code: apiCode,
+      memorySize: 512,
+      timeout: cdk.Duration.seconds(30),
+      logGroup: new logs.LogGroup(this, 'GamesLogGroup', {
+        logGroupName: '/aws/lambda/cartridge-games',
+        retention: logs.RetentionDays.ONE_MONTH,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
+      environment: {
+        GAMES_TABLE: gamesTable.tableName,
+        CSV_BUCKET: csvBucket.bucketName,
+        TRAIN_FUNCTION: trainFunction.functionName,
+        RAWG_API_KEY_PARAM: RAWG_PARAM_NAME,
+      },
+    });
+    gamesTable.grantReadWriteData(gamesFunction);
+    csvBucket.grantWrite(gamesFunction);
+    trainFunction.grantInvoke(gamesFunction);
+    gamesFunction.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ssm:GetParameter'],
+      resources: [ssmParamArn],
+    }));
+
     // Predict Lambda — outside VPC (needs RAWG public API)
     const predictFunction = new lambda.Function(this, 'PredictFunction', {
       functionName: 'cartridge-predict',
@@ -83,7 +116,6 @@ export class ApiStack extends cdk.Stack {
         removalPolicy: cdk.RemovalPolicy.DESTROY,
       }),
       environment: {
-        GAMES_TABLE: gamesTable.tableName,
         PREDICTIONS_TABLE: predictionsTable.tableName,
         PROFILE_TABLE: profileTable.tableName,
         MODEL_BUCKET: modelBucket.bucketName,
@@ -113,35 +145,62 @@ export class ApiStack extends cdk.Stack {
       }),
       environment: {
         PREDICTIONS_TABLE: predictionsTable.tableName,
+        PROFILE_TABLE: profileTable.tableName,
         PREDICT_FUNCTION: predictFunction.functionName,
         RAWG_API_KEY_PARAM: RAWG_PARAM_NAME,
       },
     });
     predictionsTable.grantReadWriteData(this.feedFunction);
+    profileTable.grantReadData(this.feedFunction);
     predictFunction.grantInvoke(this.feedFunction);
     this.feedFunction.addToRolePolicy(new iam.PolicyStatement({
       actions: ['ssm:GetParameter'],
       resources: [ssmParamArn],
     }));
 
+    // Cognito JWT authorizer — validates IdToken from frontend
+    const jwtAuthorizer = new authorizers.HttpJwtAuthorizer(
+      'CognitoAuthorizer',
+      userPool.userPoolProviderUrl,
+      {
+        jwtAudience: [userPoolClient.userPoolClientId],
+      },
+    );
+
     // API Gateway
     const api = new apigw.HttpApi(this, 'HttpApi', {
       apiName: 'cartridge-api',
       corsPreflight: {
         allowOrigins: ['*'],
-        allowMethods: [apigw.CorsHttpMethod.GET],
-        allowHeaders: ['Content-Type'],
+        allowMethods: [
+          apigw.CorsHttpMethod.GET,
+          apigw.CorsHttpMethod.POST,
+          apigw.CorsHttpMethod.PUT,
+          apigw.CorsHttpMethod.DELETE,
+          apigw.CorsHttpMethod.OPTIONS,
+        ],
+        allowHeaders: ['Content-Type', 'Authorization'],
       },
     });
 
-    const readInt = new integrations.HttpLambdaIntegration('ReadInt', readFunction);
+    const readInt  = new integrations.HttpLambdaIntegration('ReadInt',   readFunction);
+    const gamesInt = new integrations.HttpLambdaIntegration('GamesInt',  gamesFunction);
     const predictInt = new integrations.HttpLambdaIntegration('PredictInt', predictFunction);
-    const feedInt = new integrations.HttpLambdaIntegration('FeedInt', this.feedFunction);
+    const feedInt  = new integrations.HttpLambdaIntegration('FeedInt',   this.feedFunction);
 
-    api.addRoutes({ path: '/library', methods: [apigw.HttpMethod.GET], integration: readInt });
-    api.addRoutes({ path: '/profile', methods: [apigw.HttpMethod.GET], integration: readInt });
-    api.addRoutes({ path: '/predict', methods: [apigw.HttpMethod.GET], integration: predictInt });
-    api.addRoutes({ path: '/feed', methods: [apigw.HttpMethod.GET], integration: feedInt });
+    // Read routes
+    api.addRoutes({ path: '/library',  methods: [apigw.HttpMethod.GET],    integration: readInt,    authorizer: jwtAuthorizer });
+    api.addRoutes({ path: '/profile',  methods: [apigw.HttpMethod.GET],    integration: readInt,    authorizer: jwtAuthorizer });
+
+    // Write routes
+    api.addRoutes({ path: '/import',           methods: [apigw.HttpMethod.POST],   integration: gamesInt, authorizer: jwtAuthorizer });
+    api.addRoutes({ path: '/games',            methods: [apigw.HttpMethod.POST],   integration: gamesInt, authorizer: jwtAuthorizer });
+    api.addRoutes({ path: '/games/{game_id}',  methods: [apigw.HttpMethod.PUT, apigw.HttpMethod.DELETE], integration: gamesInt, authorizer: jwtAuthorizer });
+    api.addRoutes({ path: '/train',            methods: [apigw.HttpMethod.POST],   integration: gamesInt, authorizer: jwtAuthorizer });
+
+    // Predict + feed
+    api.addRoutes({ path: '/predict', methods: [apigw.HttpMethod.GET],    integration: predictInt, authorizer: jwtAuthorizer });
+    api.addRoutes({ path: '/feed',    methods: [apigw.HttpMethod.GET],    integration: feedInt,    authorizer: jwtAuthorizer });
 
     this.apiUrl = api.apiEndpoint;
 

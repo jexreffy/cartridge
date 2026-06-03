@@ -47,6 +47,29 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Deploy CDK stacks
+        working-directory: cdk
+        run: |
+          npm ci
+          npm run build
+          npx cdk deploy CartridgeNetworking CartridgeAuth CartridgeStorage CartridgeImport CartridgeApi CartridgeScheduler --require-approval never
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
+
+      - name: Get Cognito IDs from CloudFormation outputs
+        id: cognito
+        run: |
+          USER_POOL_ID=$(aws cloudformation describe-stacks \
+            --stack-name CartridgeAuth \
+            --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" \
+            --output text)
+          CLIENT_ID=$(aws cloudformation describe-stacks \
+            --stack-name CartridgeAuth \
+            --query "Stacks[0].Outputs[?OutputKey=='UserPoolClientId'].OutputValue" \
+            --output text)
+          echo "user_pool_id=$USER_POOL_ID" >> "$GITHUB_OUTPUT"
+          echo "client_id=$CLIENT_ID" >> "$GITHUB_OUTPUT"
+
       - name: Build & lint frontend
         working-directory: frontend
         run: |
@@ -54,18 +77,11 @@ jobs:
           npm run build
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
-
-      - name: Deploy CDK stacks
-        working-directory: cdk
-        run: |
-          npm ci
-          npm run build
-          npx cdk deploy CartridgeNetworking CartridgeStorage CartridgeImport CartridgeApi CartridgeScheduler --require-approval never
-        env:
-          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
+          VITE_COGNITO_USER_POOL_ID: ${{ steps.cognito.outputs.user_pool_id }}
+          VITE_COGNITO_CLIENT_ID: ${{ steps.cognito.outputs.client_id }}
 
       # CartridgeCdn skipped until AWS account CloudFront restriction lifts
-      # Uncomment these steps and remove --exclude CartridgeCdn above when ready
+      # Uncomment these steps when ready:
       # - name: Sync frontend to S3
       #   run: |
       #     BUCKET=$(aws cloudformation list-exports \

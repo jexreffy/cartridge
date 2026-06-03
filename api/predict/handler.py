@@ -1,6 +1,10 @@
 """
 Predict Lambda — given a game title (or RAWG slug), predicts a score.
 Uses the stored sklearn model + taste profile. Zero Bedrock calls at runtime.
+
+Supports two invocation modes:
+  1. API Gateway (JWT required) — user_id from JWT claims
+  2. Direct Lambda invoke from Feed (no JWT) — user_id from payload {"user_id": "...", "title": "..."}
 """
 
 import json
@@ -13,13 +17,12 @@ import boto3
 import numpy as np
 
 from shared.rawg import (
-    search_game,
-    get_game_detail,
     extract_metadata,
+    get_game_detail,
+    search_game,
 )
 from shared.model import load_model
 
-GAMES_TABLE = os.environ["GAMES_TABLE"]
 PREDICTIONS_TABLE = os.environ["PREDICTIONS_TABLE"]
 PROFILE_TABLE = os.environ["PROFILE_TABLE"]
 RAWG_API_KEY_PARAM = os.environ["RAWG_API_KEY_PARAM"]
@@ -29,8 +32,7 @@ ssm = boto3.client("ssm")
 predictions_table = dynamodb.Table(PREDICTIONS_TABLE)
 profile_table = dynamodb.Table(PROFILE_TABLE)
 
-_model_cache = None
-_model_meta_cache = None
+_model_cache: dict = {}  # keyed by user_id
 
 
 def get_rawg_key() -> str:
@@ -38,11 +40,26 @@ def get_rawg_key() -> str:
     return resp["Parameter"]["Value"]
 
 
-def get_model():
-    global _model_cache, _model_meta_cache
-    if _model_cache is None:
-        _model_cache, _model_meta_cache = load_model()
-    return _model_cache, _model_meta_cache
+def get_user_id(event: dict) -> str:
+    # From JWT authorizer (API Gateway invocation)
+    claims = (
+        event.get("requestContext", {})
+        .get("authorizer", {})
+        .get("jwt", {})
+        .get("claims", {})
+    )
+    if claims.get("sub"):
+        return claims["sub"]
+    # From direct Lambda invoke (Feed Lambda)
+    if event.get("user_id"):
+        return event["user_id"]
+    raise ValueError("No user_id found in event")
+
+
+def get_model(user_id: str):
+    if user_id not in _model_cache:
+        _model_cache[user_id] = load_model(user_id)
+    return _model_cache[user_id]
 
 
 def build_feature_vector(
@@ -108,6 +125,11 @@ def compute_factor_breakdown(
 
 
 def handler(event: dict, context) -> dict:
+    try:
+        user_id = get_user_id(event)
+    except ValueError as e:
+        return {"statusCode": 401, "body": json.dumps({"error": str(e)})}
+
     # Support direct Lambda invoke (from feed) and API Gateway
     if "queryStringParameters" in event:
         params = event.get("queryStringParameters") or {}
@@ -120,7 +142,7 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 400, "body": json.dumps({"error": "title is required"})}
 
     api_key = get_rawg_key()
-    model_bundle, model_meta = get_model()
+    model_bundle, model_meta = get_model(user_id)
 
     # Fetch game metadata from RAWG
     result = search_game(title, api_key)
@@ -148,7 +170,7 @@ def handler(event: dict, context) -> dict:
     factors = compute_factor_breakdown(meta, model_bundle, model_meta)
 
     # Load taste profile for context
-    profile_resp = profile_table.get_item(Key={"profile_id": "main"})
+    profile_resp = profile_table.get_item(Key={"user_id": user_id})
     taste_profile = (profile_resp.get("Item") or {}).get("text", "")
 
     prediction = {
@@ -169,13 +191,13 @@ def handler(event: dict, context) -> dict:
         "model_version": model_meta.get("model_version", ""),
     }
 
-    # Persist prediction
+    # Persist prediction (PK=user_id, SK=game_id#pred#date)
     ttl = int(time.time()) + (90 * 24 * 60 * 60)
     today = datetime.now(timezone.utc).date().isoformat()
     predictions_table.put_item(
         Item={
-            "game_id": meta["rawg_slug"],
-            "sk": f"pred#{today}",
+            "user_id": user_id,
+            "sk": f"{meta['rawg_slug']}#pred#{today}",
             "predicted_score": Decimal(str(round(predicted_score, 1))),
             "confidence": Decimal(str(confidence)),
             "on_nintendo": on_nintendo,

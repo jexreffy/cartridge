@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { apiFetch } from '../api';
 
 interface FeedItem {
   game_id: string;
@@ -10,7 +11,6 @@ interface FeedItem {
   created_at: string;
 }
 
-const API = import.meta.env.VITE_API_URL ?? '/api';
 const scoreColor = (s: number) => s >= 8 ? '#4ade80' : s >= 6 ? '#facc15' : '#f87171';
 
 export default function WeeklyFeed() {
@@ -19,7 +19,7 @@ export default function WeeklyFeed() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetch(`${API}/feed`)
+    apiFetch('/feed')
       .then((r) => r.json())
       .then(setItems)
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))

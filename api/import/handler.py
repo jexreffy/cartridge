@@ -1,6 +1,8 @@
 """
 Import Lambda — triggered by S3 PUT of a CSV file.
-Parses the CSV, enriches each game via RAWG, writes to DynamoDB,
+Expected S3 key format: uploads/{user_id}/my_games.csv
+
+Parses the CSV, enriches each game via RAWG, writes to DynamoDB (PK=user_id, SK=game_id),
 then invokes the Train Lambda to refit the model.
 """
 
@@ -14,7 +16,7 @@ import urllib.parse
 import boto3
 
 from shared import logger
-from shared.rawg import search_game, get_game_detail, extract_metadata
+from shared.rawg import extract_metadata, get_game_detail, search_game
 
 GAMES_TABLE = os.environ["GAMES_TABLE"]
 TRAIN_FUNCTION = os.environ["TRAIN_FUNCTION"]
@@ -31,6 +33,14 @@ table = dynamodb.Table(GAMES_TABLE)
 def get_rawg_key() -> str:
     resp = ssm.get_parameter(Name=RAWG_API_KEY_PARAM, WithDecryption=True)
     return resp["Parameter"]["Value"]
+
+
+def parse_user_id(key: str) -> str:
+    """Extract user_id from S3 key: uploads/{user_id}/my_games.csv"""
+    parts = key.split("/")
+    if len(parts) >= 2:
+        return parts[1]
+    raise ValueError(f"Cannot parse user_id from S3 key: {key}")
 
 
 def parse_csv(content: str) -> list[dict]:
@@ -67,7 +77,7 @@ def parse_csv(content: str) -> list[dict]:
     return games
 
 
-def enrich_and_store(game: dict, api_key: str) -> None:
+def enrich_and_store(game: dict, user_id: str, api_key: str) -> None:
     title = game["title"]
     result = search_game(title, api_key)
     if not result:
@@ -75,6 +85,7 @@ def enrich_and_store(game: dict, api_key: str) -> None:
         # Store with user data only, no enrichment
         table.put_item(
             Item={
+                "user_id": user_id,
                 "game_id": title.lower().replace(" ", "-"),
                 "title": title,
                 "my_score": game["my_score"],
@@ -91,6 +102,7 @@ def enrich_and_store(game: dict, api_key: str) -> None:
     meta = extract_metadata(detail)
 
     item = {
+        "user_id": user_id,
         "game_id": meta["rawg_slug"] or title.lower().replace(" ", "-"),
         "title": title,
         "my_score": game["my_score"],
@@ -116,6 +128,9 @@ def handler(event: dict, context) -> dict:
     bucket = event["Records"][0]["s3"]["bucket"]["name"]
     key = urllib.parse.unquote_plus(event["Records"][0]["s3"]["object"]["key"])
 
+    user_id = parse_user_id(key)
+    logger.info("Import triggered", user_id=user_id, key=key)
+
     obj = s3.get_object(Bucket=bucket, Key=key)
     content = obj["Body"].read().decode("utf-8-sig")  # handle BOM from Excel
 
@@ -126,7 +141,7 @@ def handler(event: dict, context) -> dict:
     failed = 0
     for game in games:
         try:
-            enrich_and_store(game, api_key)
+            enrich_and_store(game, user_id, api_key)
             stored += 1
         except Exception as e:
             failed += 1
@@ -134,11 +149,13 @@ def handler(event: dict, context) -> dict:
 
     logger.info("Import complete", stored=stored, failed=failed)
 
-    # Invoke Train Lambda asynchronously
+    # Invoke Train Lambda asynchronously, passing the user_id
     lambda_client.invoke(
         FunctionName=TRAIN_FUNCTION,
         InvocationType="Event",
-        Payload=json.dumps({"source": "import", "game_count": stored}),
+        Payload=json.dumps(
+            {"source": "import", "user_id": user_id, "game_count": stored}
+        ),
     )
 
     return {"stored": stored, "failed": failed}

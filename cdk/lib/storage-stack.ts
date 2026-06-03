@@ -27,28 +27,29 @@ export class StorageStack extends cdk.Stack {
       versioned: true,
     });
 
-    // DynamoDB: Game library
+    // DynamoDB: Game library — PK=user_id, SK=game_id (multi-user ready)
     this.gamesTable = new dynamodb.Table(this, 'GamesTable', {
       tableName: 'cartridge-games',
-      partitionKey: { name: 'game_id', type: dynamodb.AttributeType.STRING },
+      partitionKey: { name: 'user_id', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'game_id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
-    // DynamoDB: Predictions cache
+    // DynamoDB: Predictions cache — PK=user_id, SK=game_id#pred#date
     this.predictionsTable = new dynamodb.Table(this, 'PredictionsTable', {
       tableName: 'cartridge-predictions',
-      partitionKey: { name: 'game_id', type: dynamodb.AttributeType.STRING },
+      partitionKey: { name: 'user_id', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       timeToLiveAttribute: 'ttl',
     });
 
-    // DynamoDB: Taste profile
+    // DynamoDB: Taste profile — PK=user_id
     this.profileTable = new dynamodb.Table(this, 'ProfileTable', {
       tableName: 'cartridge-profile',
-      partitionKey: { name: 'profile_id', type: dynamodb.AttributeType.STRING },
+      partitionKey: { name: 'user_id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });

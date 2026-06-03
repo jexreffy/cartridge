@@ -103,11 +103,11 @@ export class ImportStack extends cdk.Stack {
       resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter${RAWG_PARAM_NAME}`],
     }));
 
-    // Trigger import when CSV lands in bucket
+    // Trigger import when CSV lands under uploads/{user_id}/
     this.csvBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
       new s3n.LambdaDestination(importFunction),
-      { suffix: '.csv' },
+      { prefix: 'uploads/', suffix: '.csv' },
     );
 
     new cdk.CfnOutput(this, 'CsvUploadBucket', { value: this.csvBucket.bucketName });
