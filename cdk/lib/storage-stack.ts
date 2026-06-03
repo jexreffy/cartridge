@@ -29,7 +29,7 @@ export class StorageStack extends cdk.Stack {
 
     // DynamoDB: Game library — PK=user_id, SK=game_id (multi-user ready)
     this.gamesTable = new dynamodb.Table(this, 'GamesTable', {
-      tableName: 'cartridge-games',
+      tableName: 'cartridge-games-v2',
       partitionKey: { name: 'user_id', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'game_id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -38,7 +38,7 @@ export class StorageStack extends cdk.Stack {
 
     // DynamoDB: Predictions cache — PK=user_id, SK=game_id#pred#date
     this.predictionsTable = new dynamodb.Table(this, 'PredictionsTable', {
-      tableName: 'cartridge-predictions',
+      tableName: 'cartridge-predictions-v2',
       partitionKey: { name: 'user_id', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -48,7 +48,7 @@ export class StorageStack extends cdk.Stack {
 
     // DynamoDB: Taste profile — PK=user_id
     this.profileTable = new dynamodb.Table(this, 'ProfileTable', {
-      tableName: 'cartridge-profile',
+      tableName: 'cartridge-profile-v2',
       partitionKey: { name: 'user_id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
