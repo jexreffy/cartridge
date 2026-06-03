@@ -100,12 +100,26 @@ export default function Library() {
                   ))}
                 </div>
               )}
-              <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', fontSize: '0.8rem', color: '#666' }}>
-                {g.release_year && <span>{g.release_year}</span>}
-                {g.times_completed !== undefined && (
-                  <span>{'⭐'.repeat(Math.min(g.times_completed, 4)) || '—'}</span>
+              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.6rem', alignItems: 'center' }}>
+                {g.release_year && (
+                  <span style={{ fontSize: '0.72rem', color: '#666' }}>{g.release_year}</span>
                 )}
-                <span>{'▪'.repeat(g.weight)} weight</span>
+                {g.times_completed !== undefined && g.times_completed > 0 && (
+                  <span style={{ fontSize: '0.72rem', background: '#1a2a1a', border: '1px solid #2a3a2a',
+                    color: '#6ee76e', padding: '0.15rem 0.45rem', borderRadius: 10 }}>
+                    ✓ Completed {g.times_completed > 1 ? `${g.times_completed}×` : ''}
+                  </span>
+                )}
+                {g.times_completed === 0 && (
+                  <span style={{ fontSize: '0.72rem', background: '#2a1a1a', border: '1px solid #3a2a2a',
+                    color: '#f87171', padding: '0.15rem 0.45rem', borderRadius: 10 }}>
+                    ✗ Dropped
+                  </span>
+                )}
+                <span style={{ fontSize: '0.72rem', background: '#1a1a2a', border: '1px solid #2a2a3a',
+                  color: '#888', padding: '0.15rem 0.45rem', borderRadius: 10 }}>
+                  {'★'.repeat(g.weight)}{'☆'.repeat(5 - g.weight)} relevance
+                </span>
               </div>
               {g.notes && (
                 <p style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#888', fontStyle: 'italic',
