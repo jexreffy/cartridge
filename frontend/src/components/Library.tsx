@@ -5,7 +5,8 @@ interface Game {
   title: string;
   my_score: number;
   weight: number;
-  times_completed?: number;
+  replayed?: number;
+  times_completed?: number; // legacy field, some records may still have it
   genres?: string[];
   developers?: string[];
   release_year?: number;
@@ -104,16 +105,16 @@ export default function Library() {
                 {g.release_year && (
                   <span style={{ fontSize: '0.72rem', color: '#666' }}>{g.release_year}</span>
                 )}
-                {g.times_completed !== undefined && g.times_completed > 0 && (
+                {g.my_score >= 1 && (
                   <span style={{ fontSize: '0.72rem', background: '#1a2a1a', border: '1px solid #2a3a2a',
                     color: '#6ee76e', padding: '0.15rem 0.45rem', borderRadius: 10 }}>
-                    ✓ Completed {g.times_completed > 1 ? `${g.times_completed}×` : ''}
+                    ✓ Completed
                   </span>
                 )}
-                {g.times_completed === 0 && (
-                  <span style={{ fontSize: '0.72rem', background: '#2a1a1a', border: '1px solid #3a2a2a',
-                    color: '#f87171', padding: '0.15rem 0.45rem', borderRadius: 10 }}>
-                    ✗ Dropped
+                {g.replayed === 1 && (
+                  <span style={{ fontSize: '0.72rem', background: '#1a1a2a', border: '1px solid #3a2a5a',
+                    color: '#a78bfa', padding: '0.15rem 0.45rem', borderRadius: 10 }}>
+                    🔁 Replayed
                   </span>
                 )}
                 <span style={{ fontSize: '0.72rem', background: '#1a1a2a', border: '1px solid #2a2a3a',
