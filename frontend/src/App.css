@@ -8,3 +8,5 @@
 .tab:hover { background: #22222e; }
 .tab.active { background: #6c3fff; border-color: #6c3fff; color: #fff; font-weight: 600; }
 .main { padding-bottom: 3rem; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes pulse { 0%, 100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1); } }

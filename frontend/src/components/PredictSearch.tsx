@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { apiFetch } from '../api';
 
@@ -23,6 +23,11 @@ interface Profile {
 
 const scoreColor = (s: number) => s >= 8 ? '#4ade80' : s >= 6 ? '#facc15' : '#f87171';
 
+const cardStyle: React.CSSProperties = {
+  background: '#1a1a24', border: '1px solid #2a2a35', borderRadius: 8,
+  padding: '1.25rem 1.5rem', marginBottom: '2rem',
+};
+
 export default function PredictSearch() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -32,8 +37,8 @@ export default function PredictSearch() {
 
   useEffect(() => {
     apiFetch('/profile')
-      .then((r) => r.json())
-      .then(setProfile)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.text) setProfile(data); })
       .catch(() => { /* profile may not exist yet */ });
   }, []);
 
@@ -62,9 +67,17 @@ export default function PredictSearch() {
 
   return (
     <div style={{ maxWidth: 700, margin: '0 auto' }}>
+      {!profile && (
+        <div style={{ ...cardStyle, color: '#555', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <span style={{ fontSize: '1.5rem' }}>⏳</span>
+          <div>
+            <div style={{ color: '#888', fontWeight: 600, marginBottom: '0.25rem' }}>Taste profile not ready yet</div>
+            Your library is still being imported and the model is training. Check back in a few minutes — predictions will work once training completes.
+          </div>
+        </div>
+      )}
       {profile && (
-        <div style={{ background: '#1a1a24', border: '1px solid #2a2a35', borderRadius: 8,
-          padding: '1.25rem 1.5rem', marginBottom: '2rem' }}>
+        <div style={cardStyle}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
             <span style={{ fontSize: '1.2rem' }}>🎮</span>
             <h3 style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.08em',

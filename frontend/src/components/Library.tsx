@@ -19,7 +19,11 @@ const scoreColor = (s: number) => {
 
 type ImportStatus = 'idle' | 'uploading' | 'success' | 'error';
 
-export default function Library() {
+interface LibraryProps {
+  onTrainingStarted?: () => void;
+}
+
+export default function Library({ onTrainingStarted }: LibraryProps) {
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -103,6 +107,7 @@ export default function Library() {
       if (!resp.ok) throw new Error(data.error ?? 'Import failed');
       setImportStatus('success');
       setImportMsg(data.message);
+      onTrainingStarted?.();
     } catch (err) {
       setImportStatus('error');
       setImportMsg(err instanceof Error ? err.message : String(err));
@@ -113,6 +118,7 @@ export default function Library() {
     setRetraining(true);
     try {
       await apiFetch('/train', { method: 'POST' });
+      onTrainingStarted?.();
     } finally {
       setRetraining(false);
     }
