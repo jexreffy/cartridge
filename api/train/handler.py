@@ -21,7 +21,7 @@ from shared.model import save_model
 GAMES_TABLE = os.environ["GAMES_TABLE"]
 PROFILE_TABLE = os.environ["PROFILE_TABLE"]
 MODEL_BUCKET = os.environ["MODEL_BUCKET"]
-BEDROCK_MODEL = "anthropic.claude-haiku-20240307"
+BEDROCK_MODEL = "anthropic.claude-haiku-4-5-20251001-v1:0"
 
 dynamodb = boto3.resource("dynamodb")
 bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
