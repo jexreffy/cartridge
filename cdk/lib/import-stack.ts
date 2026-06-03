@@ -35,7 +35,15 @@ export class ImportStack extends cdk.Stack {
     });
 
     const RUNTIME = lambda.Runtime.PYTHON_3_12;
-    const apiCode = lambda.Code.fromAsset('../api');
+    const apiCode = lambda.Code.fromAsset('../api', {
+      bundling: {
+        image: RUNTIME.bundlingImage,
+        command: [
+          'bash', '-c',
+          'pip install -r requirements.txt -t /asset-output && cp -r . /asset-output',
+        ],
+      },
+    });
 
     // Train Lambda — no VPC needed (reads DynamoDB, writes S3, calls Bedrock)
     this.trainFunction = new lambda.Function(this, 'TrainFunction', {

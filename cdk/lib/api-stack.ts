@@ -29,7 +29,15 @@ export class ApiStack extends cdk.Stack {
 
     const { vpc, lambdaSg, gamesTable, predictionsTable, profileTable, modelBucket, trainFunction } = props;
     const RUNTIME = lambda.Runtime.PYTHON_3_12;
-    const apiCode = lambda.Code.fromAsset('../api');
+    const apiCode = lambda.Code.fromAsset('../api', {
+      bundling: {
+        image: RUNTIME.bundlingImage,
+        command: [
+          'bash', '-c',
+          'pip install -r requirements.txt -t /asset-output && cp -r . /asset-output',
+        ],
+      },
+    });
 
     const ssmParamArn = `arn:aws:ssm:${this.region}:${this.account}:parameter${RAWG_PARAM_NAME}`;
 
